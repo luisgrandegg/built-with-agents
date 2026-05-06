@@ -1,0 +1,13 @@
+---
+const lastUpdated = new Date().toISOString().slice(0, 10);
+---
+
+<footer class="mt-24 border-t border-[var(--color-rule)]">
+  <div class="mx-auto max-w-3xl px-6 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-[var(--color-muted)]">
+    <p class="font-mono">Built with Agents — {lastUpdated}</p>
+    <nav class="flex gap-5">
+      <a href="/">Home</a>
+      <a href="/about">About</a>
+    </nav>
+  </div>
+</footer>

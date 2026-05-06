@@ -1,0 +1,27 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import ProjectCard from './ProjectCard.astro';
+
+interface Props {
+  projects: CollectionEntry<'projects'>[];
+}
+
+const { projects } = Astro.props;
+---
+
+{
+  projects.length > 0 && (
+    <section aria-label="All projects" class="mx-auto max-w-3xl px-6">
+      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-muted)] mb-2">
+        All projects
+      </h2>
+      <ul class="list-none p-0 m-0">
+        {projects.map((project) => (
+          <li>
+            <ProjectCard project={project} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

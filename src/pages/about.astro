@@ -1,0 +1,52 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="About"
+  description="What this site is and how I work alongside AI agents."
+  ogSlug="about"
+>
+  <main class="mx-auto max-w-3xl px-6 pt-16 sm:pt-24 pb-16">
+    <p class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+      <a href="/" class="!text-[var(--color-muted)] hover:!text-[var(--color-accent)]">
+        ← Built with Agents
+      </a>
+    </p>
+
+    <h1 class="mt-8 text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.05] text-balance">
+      About this site
+    </h1>
+
+    <article class="prose-case mt-10">
+      <p>
+        This is a public space to share projects I've built with AI tools and document how I
+        actually work alongside agents. It's not a pitch and it's not a portfolio in the usual
+        sense — it's a contribution to the conversation about AI-assisted development in
+        practice.
+      </p>
+
+      <h2>What you'll find</h2>
+      <p>
+        Each case study answers four questions in this order: <em>What is it? How did I work with
+        AI to build it? What's the technical shape? What would I do differently?</em> The "AI
+        workflow" section is the part I think is worth reading. It's where the practice actually
+        lives — the prompting, the handoffs, the manual interventions, the things that didn't
+        work.
+      </p>
+
+      <h2>How I work</h2>
+      <p>
+        I lean on agents for scaffolding, refactors, and the kind of repeated grunt work that
+        used to eat afternoons. I review every change. I keep humans in the loop on
+        architecture, on the parts of a system that need long memory, and on anything that
+        ships to users without a way to roll back.
+      </p>
+
+      <p>
+        Find me by following the links in the footer. If a project below interests you, the
+        repo links go to the actual code.
+      </p>
+    </article>
+  </main>
+</BaseLayout>

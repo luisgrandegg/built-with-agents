@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import ProjectCard from '../components/ProjectCard.astro';
+import ProjectGrid from '../components/ProjectGrid.astro';
+
+const all = await getCollection('projects');
+const sorted = all.sort((a, b) => a.data.order - b.data.order);
+const featured = sorted.find((p) => p.data.featured);
+const rest = featured ? sorted.filter((p) => p.id !== featured.id) : sorted;
+---
+
+<BaseLayout title="Built with Agents">
+  <Hero />
+
+  {
+    featured && (
+      <section aria-label="Featured project" class="mx-auto max-w-3xl px-6">
+        <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-accent)] mt-12 mb-2">
+          Featured
+        </h2>
+        <ProjectCard project={featured} featured />
+      </section>
+    )
+  }
+
+  <ProjectGrid projects={rest} />
+</BaseLayout>

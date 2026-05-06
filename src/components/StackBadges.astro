@@ -1,0 +1,28 @@
+---
+interface Props {
+  items: string[];
+  variant?: 'stack' | 'ai';
+  class?: string;
+}
+
+const { items, variant = 'stack', class: className = '' } = Astro.props;
+---
+
+{
+  items.length > 0 && (
+    <ul class:list={['flex flex-wrap gap-1.5', className]}>
+      {items.map((item) => (
+        <li
+          class:list={[
+            'font-mono text-[0.7rem] uppercase tracking-wider px-2 py-0.5 rounded-sm border',
+            variant === 'ai'
+              ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+              : 'border-[var(--color-rule)] text-[var(--color-muted)]',
+          ]}
+        >
+          {item}
+        </li>
+      ))}
+    </ul>
+  )
+}

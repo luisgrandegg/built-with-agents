@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://built-with-agents.example/sitemap-index.xml
