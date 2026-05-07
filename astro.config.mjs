@@ -6,7 +6,7 @@ import vercel from '@astrojs/vercel';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  site: 'https://built-with-agents.example',
+  site: 'https://built-with-agents.vercel.app',
   output: 'static',
   adapter: vercel({ webAnalytics: { enabled: true } }),
   integrations: [mdx(), react(), sitemap()],
