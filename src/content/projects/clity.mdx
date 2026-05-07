@@ -1,0 +1,70 @@
+---
+title: "clity"
+oneLiner: "Turn any OpenAPI spec into a CLI that an AI agent can drive — no MCP server, no SDK, just a shell command."
+status: wip
+year: 2026
+role: solo
+stack:
+  - "TypeScript"
+  - "Node.js"
+  - "Commander"
+  - "OpenAPI"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/clity"
+order: 10
+featured: false
+---
+
+## The problem
+
+Every time an agent needs to talk to a new API, the integration layer gets reinvented: write an MCP server, bundle an SDK into the prompt, hand-author tool definitions, paper over auth differently each time. Meanwhile the API already publishes an OpenAPI spec that describes its entire surface, and every modern agent already knows how to run a shell command. The wiring in between is what's missing — and writing it once per API is busywork that should be a generator.
+
+The bet behind clity is that the universal interface to APIs is the shell, and the universal client is the agent. If that's true, the missing piece is a tool that takes any OpenAPI 3.x spec and emits a Node.js CLI where every operation is a subcommand, every flag is documented, errors are structured JSON, exit codes are stable, and a `describe` command hands back the full surface as machine-readable JSON. An agent that can run a shell command can then use any API.
+
+## AI workflow
+
+Built with Claude Code, but on a much heavier scaffold than a single-file utility. The repo runs on a constitution-first workflow: principles are written down before code, and the agent reads them every session.
+
+1. **Constitution before code.** Before the first line shipped, [`CONSTITUTION.md`](https://github.com/luisgrandegg/clity/blob/main/CONSTITUTION.md) was written with the seven principles every change must follow: agent-first contract, stable I/O, generated code is plain JS, no runtime magic, conservative deps, forkable output, honest scope. Every PR explicitly checks against those principles. When a request would violate one, Claude is instructed to flag it instead of proceeding.
+2. **Scope frozen in MVP.md.** [`MVP.md`](https://github.com/luisgrandegg/clity/blob/main/MVP.md) defines exactly what v0.1 supports — OAS 3.0/3.1, API key + bearer auth, JSON bodies — and what's deliberately deferred (OAuth2, multipart, pagination, response validation, shell completion, native binaries). "Future work belongs in the README's Limitations section, not as half-implemented features" is a rule Claude can cite back when scope creeps in mid-task.
+3. **CLAUDE.md as session loader.** Every Claude Code session opens with [`CLAUDE.md`](https://github.com/luisgrandegg/clity/blob/main/CLAUDE.md), which points at the constitution, the MVP, the repo layout, the generator's three-stage pipeline (parse → normalize → emit), the agent contract of the generated CLI, branch naming, CI gates, and an allow-list of bash subcommands so permission prompts don't derail flow.
+4. **Backlog as ground truth.** Features live as files in `backlog/todo/`, get picked up one at a time, and move to `backlog/completed/` with a commit. A pre-commit hook fails if the same feature exists in both directories. This makes "what's the project state right now" a `cat backlog.md` away — for me and for any agent picking up where the last session left off.
+5. **Slash commands as guard rails.** `/generate-cli`, `/smoke-test`, `/create-pr`, `/watch-pr`, `/review-pr`, `/rules-audit`, `/complete-feature`, `/tackle-backlog` — each one bakes in the right sequence of steps for a recurring task so the workflow doesn't drift between sessions.
+6. **Rules audit on rule changes.** Editing CLAUDE.md or the constitution triggers a `/rules-audit` run before and after, scoring the rules across eight criteria. PR descriptions include the before/after scores. The point is to keep the agent's operating manual from rotting.
+
+What worked: writing the constitution first made every later decision faster — "does this preserve the I/O contract?" is a one-line check, not a debate. What got reworked least: the three-stage generator pipeline (parse → normalize → emit) and the split between TypeScript generator / plain-JS generated runtime. What got reworked most: the shape of `describe`'s JSON, because that *is* the product's API surface and every change to it is a major version bump — so we kept iterating until it felt right.
+
+## Architecture
+
+Two pieces of software live in one repo. The generator is TypeScript and runs as `npx clity <spec-url-or-path> --output ./my-cli`. The generated CLI is plain JavaScript with one runtime dep (Commander) and uses native `fetch`. The user can read every file in the output, fork it, and check it into their own repo.
+
+The generator is a three-stage pipeline:
+
+```
+OpenAPI spec → parse() → raw OAS document
+             → normalize() → CliSpec (operations[], params[], security[])
+             → emit() → filesystem (package.json, bin/cli.js, lib/*.js, AGENTS.md)
+```
+
+`parse.ts` loads from URL or path and dereferences `$ref`s with `@readme/openapi-parser`. `normalize.ts` is a pure function from OAS to an internal `CliSpec` — it derives kebab-case command names, maps params to flags, extracts request-body schemas, and resolves security per operation. `emit.ts` is also pure: `CliSpec` → array of `{ path, content }`. The only impure step is `cli.ts` actually writing those files.
+
+The runtime files (`bin/cli.js`, `lib/runtime.js`) are not templated. They live in `src/generator/runtime/` as static `.js` and get copied verbatim into every output. The data they need — operations, security, base URL, CLI name — is loaded from `lib/operations.json` at runtime. That split means the runtime is forkable JavaScript that gets type-checked, linted, and tested *as-is* in the generator's own repo, without going through a generation step to verify it.
+
+The contract every generated CLI exposes to its agents is the actual product surface and is versioned: stdout success is compact JSON with a trailing newline, stderr failure is a JSON error object, exit codes are `0/1/2/3/4` (ok / usage / 4xx / 5xx / network), `describe` and `describe <command>` return the operation surface as JSON, and auth resolves in the order flag → env var → `~/.<cli-name>/config.json`. Any change to those shapes is a major version bump.
+
+## Outcomes
+
+MVP is in active development against the seven constitutional principles. The generator parses OAS 3.0 and 3.1, emits a complete npm package, and round-trips through the Petstore fixture in CI: `pnpm smoke` generates a CLI, runs `describe`, and asserts on the operation count. The generated package installs from `npm install` with one runtime dep, the binary boots, and `describe | jq '.operations[].command'` lists every endpoint as an agent-callable subcommand.
+
+The most useful outcome so far isn't code — it's the workflow itself. Constitution + MVP + CLAUDE.md + backlog + slash commands turned out to be a repeatable pattern for building anything non-trivial with an agent. clity is the first project to use it end-to-end; future projects will start from this template.
+
+## What I'd do differently
+
+Two things, both about being more aggressive earlier.
+
+First, the runtime/templates split is right but I arrived at it after one round of writing the runtime as inline strings inside `templates.ts`. That was painful to lint and impossible to test without running the generator. Starting from "the runtime is plain `.js` you can run from the repo root" would have shaved a refactor.
+
+Second, the backlog/completion workflow is great but I underused `/tackle-backlog` (one agent per feature, in parallel) for the first half of the project. Sequential single-agent work is fine; parallel agents with the constitution as their shared context are faster, and the constitution is exactly the kind of artefact that makes parallel work safe.
