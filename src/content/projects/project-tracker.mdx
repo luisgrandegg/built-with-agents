@@ -1,46 +1,55 @@
 ---
-title: "Project Tracker"
-oneLiner: "Replace this single sentence with the real pitch for project-tracker."
-status: "wip"
+title: "Casa Prefab"
+oneLiner: "A tiny self-hosted project tracker, built end-to-end with AI — one HTML file, your own Supabase, realtime sync."
+status: live
 year: 2026
-role: "solo"
-stack: []
-aiTools: []
+role: solo
+stack:
+  - "HTML"
+  - "CSS"
+  - "JavaScript"
+  - "Supabase"
+aiTools:
+  - "Claude"
+  - "Claude Code"
 links:
   github: "https://github.com/luisgrandegg/project-tracker"
-order: 1
+order: 11
 featured: true
 ---
 
 ## The problem
 
-_Placeholder — describe the problem this project solves and who it's for. Replace this paragraph with the real story._
+We were trying to coordinate a small house build — an architect, a foundations contractor, a prefab manufacturer, and the two owners — and needed a shared list of who-owes-what-by-when. Off-the-shelf trackers were either too heavy (Asana, Jira) or too generic (a shared spreadsheet nobody opens). I wanted a single page where each item had a status, an owner, a due date, and a running log of the WhatsApps and emails attached to it.
 
-{/*
-  IMPORTANT: The "AI workflow" section below is the most important section on this page.
-  It's the part actually worth reading. Do not skip it. Do not stub it with one line.
+The first prompt was concrete: items with status (To plan / To do / In progress / Action Required / Done), owner (the four people involved), a due date, and a log. The first real entry was "Planos de muros contención" — in progress, owner Isidoro, due April 17.
 
-  Cover, at minimum:
-    - Which agent(s) / tool(s) you used and why
-    - How you prompted them (style, structure, examples)
-    - What worked
-    - What didn't, and how you noticed
-    - Where you handed off between agents and humans
-    - Your review loop
-    - Any places you intervened manually and why
-*/}
 ## AI workflow
 
-_Placeholder — this is the section worth reading. Replace with real detail about how you worked with AI tools to build project-tracker._
+Built end-to-end with Claude in conversation, one prompt at a time — the `initial-prompt.md` in the repo captures the actual sequence. The shape of the workflow:
+
+1. **Start concrete, not abstract.** Prompt 1 described the data model with real names and statuses, plus one real item to seed it. Claude generated a working single-page tracker on the first turn.
+2. **Wire to a real backend before adding features.** Prompt 3 was "can we connect directly with a Supabase" — so before piling on UI, local-only state got swapped for a Supabase table with realtime sync. That kept later iterations honest: every feature had to round-trip through the database.
+3. **Layer features one at a time.** Sortable list → labels → dashboard view → timeline view (Expected vs Real graph + Gantt). Each was a single prompt, each merged cleanly because the underlying state and render layers stayed simple (one `state` object; `renderTracker` dispatches to `renderItems` / `renderDashboard` / `renderTimeline`).
+4. **Generalise late.** The Supabase URL and key were initially inlined for a private build. Prompt 9 lifted them into a setup screen backed by localStorage — turning a personal tool into something shareable without changing the rest of the app.
+5. **Hand off to Claude Code.** Prompt 10 was "create a CLAUDE.md I can use in the repo." That file captures the architectural constraints (single-file, vanilla JS, no bundler, mobile must work) and the things future agents should push back on: adopting a framework, splitting files, adding a backend service.
+
+What worked: keeping the artifact a single HTML file meant Claude always had the entire app in context — no file-routing overhead, no "which module does this go in" decisions. What got reworked least: the data model from prompt 1 survived end-to-end. What got reworked most: the timeline view — the first Gantt was cluttered and needed a follow-up prompt to get the overdue extensions and completion ticks readable.
 
 ## Architecture
 
-_Placeholder — describe the technical shape: stack choices, data model, deployment, anything notable._
+One static HTML file with inline CSS and JS. No `package.json`, no `node_modules`, no bundler. `supabase-js` v2 loads from a CDN; the JS talks to PostgREST and the realtime channel directly.
+
+State lives in a single `state` object. Render functions read from it and write innerHTML strings; click handlers attach via `data-action` attributes after each render — no virtual DOM, no reactive framework. The script is organised into clearly-marked sections: config, constants, state, helpers, Supabase layer, render layer, modal, view switching, setup wiring, init.
+
+The backend is a single Supabase table, `tracker_items`, with columns for title, description, status, owner, due_date, start_date, completed_at, a `jsonb` log column, and a `text[]` labels column. RLS is enabled with one policy (`allow_anon_all`); the table is added to the `supabase_realtime` publication. The "secret" is the obscurity of the project URL and publishable key — fine for two owners and a few collaborators, not fine for anything sensitive.
+
+First-load setup: the page reads `tracker_supabase_url` and `tracker_supabase_key` from localStorage; if missing, it shows a setup screen with two text fields, saves them on Configure, and starts the app. Adding a second user is "open the same page, paste the same two values once." View, sort, and active label filter are also persisted per-device.
 
 ## Outcomes
 
-_Placeholder — what shipped, what was measured (if anything), how it's holding up._
+Live and in use for the actual house build. Three views shipped: a sortable list with per-item activity logs; a dashboard with distributions by status / owner / deadline / label that drill into filtered lists; and a timeline view with an Expected vs Real cumulative chart and a Gantt with overdue extensions and completion ticks. Labels are free-form, hashed-colour, case-insensitively deduped, and clickable for filtering. Realtime sync is sub-second between two devices on the same Supabase project. The whole thing is one file you can drop on Cloudflare Pages, GitHub Pages, or open locally.
 
 ## What I'd do differently
 
-_Placeholder — honest retrospective. What was wrong, what was over-engineered, what was under-engineered._
+Nothing major — the project hit what it set out to do. The single-file constraint is still doing its job, and the data model from the first prompt has held up across every feature added since.
