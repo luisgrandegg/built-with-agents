@@ -1,0 +1,41 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from './BaseLayout.astro';
+import CaseStudyHeader from '../components/CaseStudyHeader.astro';
+import LinkBar from '../components/LinkBar.astro';
+import VideoEmbed from '../components/VideoEmbed.tsx';
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+}
+
+const { project } = Astro.props;
+const shareUrl = new URL(`/projects/${project.id}`, Astro.site).toString();
+---
+
+<BaseLayout
+  title={project.data.title}
+  description={project.data.oneLiner}
+  ogSlug={project.id}
+>
+  <main>
+    <CaseStudyHeader project={project} />
+    <LinkBar links={project.data.links} shareUrl={shareUrl} />
+
+    {
+      project.data.links.video && (
+        <div class="mx-auto max-w-3xl px-6 mb-6">
+          <VideoEmbed
+            client:visible
+            url={project.data.links.video}
+            title={`${project.data.title} — video`}
+          />
+        </div>
+      )
+    }
+
+    <article class="prose-case px-6 pb-16">
+      <slot />
+    </article>
+  </main>
+</BaseLayout>

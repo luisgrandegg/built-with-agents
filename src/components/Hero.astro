@@ -1,0 +1,23 @@
+---
+interface Props {
+  tagline?: string;
+}
+
+const { tagline = "What I'm building with AI, and how." } = Astro.props;
+---
+
+<header class="border-b border-[var(--color-rule)]">
+  <div class="mx-auto max-w-3xl px-6 pt-16 pb-12 sm:pt-24 sm:pb-16">
+    <p class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-accent)]">
+      Built with Agents
+    </p>
+    <h1 class="mt-6 text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.1] text-balance">
+      {tagline}
+    </h1>
+    <p class="mt-6 max-w-prose text-[var(--color-muted)] leading-relaxed">
+      A field log of projects I've built alongside AI agents — what they are, how I worked
+      with the tools, and what I'd do differently next time. The "AI workflow" section on each
+      case study is the part actually worth reading.
+    </p>
+  </div>
+</header>

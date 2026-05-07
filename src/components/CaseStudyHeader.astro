@@ -1,0 +1,71 @@
+---
+import { Image } from 'astro:assets';
+import type { CollectionEntry } from 'astro:content';
+import StackBadges from './StackBadges.astro';
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+}
+
+const { project } = Astro.props;
+const { title, oneLiner, year, role, status, stack, aiTools, heroImage } = project.data;
+
+const statusLabel: Record<typeof status, string> = {
+  live: 'Live',
+  archived: 'Archived',
+  wip: 'Work in progress',
+};
+---
+
+<header class="mx-auto max-w-3xl px-6 pt-12 pb-8 sm:pt-20">
+  <p class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+    <a href="/" class="!text-[var(--color-muted)] hover:!text-[var(--color-accent)]">
+      ← Built with Agents
+    </a>
+  </p>
+
+  <h1 class="mt-8 text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.05] text-balance">
+    {title}
+  </h1>
+  <p class="mt-5 text-lg sm:text-xl text-[var(--color-muted)] leading-relaxed text-balance max-w-prose">
+    {oneLiner}
+  </p>
+
+  <dl class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-y-3 gap-x-4 font-mono text-xs uppercase tracking-wider">
+    <div>
+      <dt class="text-[var(--color-muted)]">Year</dt>
+      <dd class="mt-0.5 text-[var(--color-fg)]">{year}</dd>
+    </div>
+    <div>
+      <dt class="text-[var(--color-muted)]">Role</dt>
+      <dd class="mt-0.5 text-[var(--color-fg)] capitalize">{role}</dd>
+    </div>
+    <div>
+      <dt class="text-[var(--color-muted)]">Status</dt>
+      <dd class="mt-0.5 text-[var(--color-fg)]">{statusLabel[status]}</dd>
+    </div>
+  </dl>
+
+  {
+    (aiTools.length > 0 || stack.length > 0) && (
+      <div class="mt-6 flex flex-col gap-2">
+        {aiTools.length > 0 && <StackBadges items={aiTools} variant="ai" />}
+        {stack.length > 0 && <StackBadges items={stack} variant="stack" />}
+      </div>
+    )
+  }
+
+  {
+    heroImage && (
+      <figure class="mt-10 -mx-6 sm:mx-0">
+        <Image
+          src={heroImage.src}
+          alt={heroImage.alt}
+          widths={[480, 768, 1200]}
+          sizes="(min-width: 768px) 768px, 100vw"
+          class="w-full h-auto sm:rounded-md border border-[var(--color-rule)]"
+        />
+      </figure>
+    )
+  }
+</header>

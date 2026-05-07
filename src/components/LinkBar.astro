@@ -1,0 +1,42 @@
+---
+import CopyLinkButton from './CopyLinkButton.tsx';
+
+interface Props {
+  links: {
+    github?: string;
+    publicUrl?: string;
+    video?: string;
+  };
+  shareUrl: string;
+}
+
+const { links, shareUrl } = Astro.props;
+
+const items: { href: string; label: string; rel?: string }[] = [];
+if (links.publicUrl) items.push({ href: links.publicUrl, label: 'Live', rel: 'noopener' });
+if (links.github) items.push({ href: links.github, label: 'GitHub', rel: 'noopener' });
+if (links.video) items.push({ href: links.video, label: 'Video', rel: 'noopener' });
+
+const hasAny = items.length > 0;
+---
+
+{
+  (hasAny || shareUrl) && (
+    <nav
+      aria-label="Project links"
+      class="mx-auto max-w-3xl px-6 mt-2 mb-6 flex flex-wrap items-center gap-2"
+    >
+      {items.map((item) => (
+        <a
+          href={item.href}
+          rel={item.rel}
+          target="_blank"
+          class="font-mono text-xs uppercase tracking-wider px-3 py-1.5 rounded-sm border border-[var(--color-rule)] !text-[var(--color-fg)] hover:!text-[var(--color-accent)] hover:border-[var(--color-accent)] no-underline"
+        >
+          {item.label} <span aria-hidden="true">↗</span>
+        </a>
+      ))}
+      <CopyLinkButton client:idle url={shareUrl} />
+    </nav>
+  )
+}
