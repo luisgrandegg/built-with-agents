@@ -29,6 +29,8 @@ pnpm preview      # serves dist/ locally
 
 Each case study is one MDX file under `src/content/projects/<slug>.mdx`. The route is `/projects/<slug>`.
 
+For any repo that follows the project-tracker convention (single-HTML utility, README + `initial-prompt.md`), there's a Claude Code slash command that drafts the MDX from a GitHub URL — see [Auto-generating from a GitHub repo](#auto-generating-from-a-github-repo) below. Otherwise, hand-author following the schema.
+
 ### Frontmatter schema
 
 Validated by `src/content.config.ts`. Mirrors the spec in `MVP.md`.
@@ -68,6 +70,42 @@ The MDX body must include these five `##` headings, in order:
 - One project at a time, real prose only. Placeholder text is fine while drafting; ship real content before flipping `status: 'wip'` to `'live'`.
 - For video embeds, paste a Loom or YouTube URL into `links.video`. The page lazy-loads the iframe and locks aspect ratio for CLS = 0.
 
+## Auto-generating from a GitHub repo
+
+For repos that follow the project-tracker convention — a single-HTML utility with a `README.md` (human description) and an `initial-prompt.md` (the prompts that built it) — you can draft the MDX from Claude Code with one command.
+
+### Usage
+
+In Claude Code, with this repo open:
+
+```
+/new-project https://github.com/luisgrandegg/project-tracker
+```
+
+Claude will:
+
+1. Fetch the repo's README, `initial-prompt.md`, `package.json`, `CLAUDE.md`, and any root-level `.html`.
+2. Auto-detect what it can: `title`, `oneLiner`, `slug`, `year`, `stack`, `aiTools`, `links.github`, `order`.
+3. Draft the five required body sections from the README + prompts.
+4. Ask you about the things it can't reliably infer: `status`, `role`, `featured`, `links.publicUrl`, `links.video`, and "What I'd do differently".
+5. Show you the full proposed MDX and wait for confirmation.
+6. Write the file via the underlying CLI — it will not commit or push.
+
+The slash command lives at `.claude/commands/new-project.md`.
+
+### Underlying CLI
+
+The writer is a deterministic Node script that takes a JSON spec and validates it against the content collection schema before writing. You can call it directly without going through Claude Code:
+
+```bash
+pnpm gen:project --from spec.json            # write src/content/projects/<slug>.mdx
+pnpm gen:project --from spec.json --dry-run  # print the MDX, don't write
+pnpm gen:project --stdin < spec.json         # read spec from stdin
+pnpm gen:project --help                       # show JSON spec shape
+```
+
+If the spec is invalid (missing required field, bad enum, malformed URL, body section empty), the script exits non-zero with a list of errors and writes nothing.
+
 ## Routes
 
 - `/` — landing (hero, featured project, project list)
@@ -79,6 +117,11 @@ The MDX body must include these five `##` headings, in order:
 ## Project structure
 
 ```
+scripts/
+  gen-project.mjs       JSON-spec → validated MDX writer (used by /new-project)
+.claude/
+  commands/
+    new-project.md      Claude Code slash command for auto-generating entries
 src/
   assets/fonts/         self-hosted Inter + JetBrains Mono (woff2 + ttf for OG)
   components/           Astro components + 2 React islands

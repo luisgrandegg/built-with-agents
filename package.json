@@ -8,7 +8,8 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "gen:project": "node scripts/gen-project.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.0.0",
