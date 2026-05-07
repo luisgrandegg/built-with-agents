@@ -1,0 +1,78 @@
+---
+title: "galley"
+oneLiner: "Upload a kitchen blueprint, answer a guided AI Q&A, and get a 2D top-down kitchen layout you can refine on a Konva canvas."
+status: wip
+year: 2026
+role: solo
+stack:
+  - "TypeScript"
+  - "React"
+  - "Vite"
+  - "Konva.js"
+  - "Zustand"
+  - "Tailwind CSS"
+  - "Hono"
+  - "SQLite"
+  - "Anthropic SDK"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/galley"
+order: 12
+featured: false
+---
+
+## The problem
+
+Designing a kitchen is mostly a measurement-and-constraints exercise. There is a room with walls, a few non-negotiable fixed points (water inlet, drain, gas, electrical outlets, doors with their swing arcs, windows), a small library of standard cabinet and appliance modules, and a handful of well-known rules — minimum walkway clearance, appliance front clearance, the work-triangle. The interesting question is "given all of this, where do the modules go?", but most kitchen-design tools bury that question under a 3D rendering engine, a materials catalogue, and an account system.
+
+galley is the deliberately small version. Upload a blueprint as a background image, trace walls on top of it, set scale, mark the fixed points, answer a guided Q&A about cooking habits and preferences, and get a 2D top-down layout that an LLM proposes and a deterministic validator vouches for. Then drag, rotate, swap, and delete modules until it feels right. Export PNG and JSON. No 3D, no auth, no bill of materials — single-user, local-first, and laser-focused on the placement loop.
+
+## AI workflow
+
+Built with Claude Code on a heavy scaffold: a frozen MVP, a CLAUDE.md session loader, ADRs for the architectural calls that matter, a backlog folder enforced by a pre-commit hook, and slash commands for every recurring lifecycle action. The bet is the same one as clity — that putting the operating manual in the repo, in plain Markdown, makes every Claude Code session start from shared context instead of cold.
+
+1. **MVP.md is the source of truth.** [`MVP.md`](https://github.com/luisgrandegg/galley/blob/main/MVP.md) defines what galley is and isn't: in scope is upload → trace → Q&A → generate → refine → export; out of scope is 3D, auth, multi-user, automatic blueprint parsing, cost estimation, and mobile layouts. CLAUDE.md instructs the agent to flag any request that conflicts with the MVP rather than silently absorbing it. That single rule has stopped more scope creep than every other guard rail combined.
+2. **Validator-first, LLM-second.** [ADR-004](https://github.com/luisgrandegg/galley/blob/main/decisions/ADR-004-validator-first-llm-second.md) makes it explicit: the deterministic validator in `packages/shared/src/validator.ts` is the source of truth for layout correctness. The LLM proposes via a `propose_layout(modules, rationale)` tool call; the backend validates; if violations come back, they're sent to the LLM as a tool result for repair, capped at 3 iterations. The LLM is a proposer, not an authority — and that framing is what makes it tolerable to ship at all.
+3. **ADRs for the load-bearing decisions.** Five so far: pnpm workspaces + Turborepo (ADR-001), millimetres as canonical unit with px render-only (ADR-002), one JSON blob per project in SQLite (ADR-003), validator-first (ADR-004), all LLM outputs through Zod-validated tool calls (ADR-005). Each ADR is short and points at the file that enforces it. Editing an ADR means writing a superseding ADR, not silently breaking the rule.
+4. **Backlog as ground truth.** Features live as files in `backlog/todo/` and move to `backlog/completed/` with a commit. A pre-commit hook fails the commit if the same feature exists in both. This makes "what's left?" a directory listing, and "is this done?" a git history check — both for me and for any agent picking up where the last session ended.
+5. **Slash commands for every recurring action.** `/create-pr`, `/watch-pr`, `/review-pr`, `/discover`, `/tackle-backlog`, `/audit-validator`, `/rules-audit`, `/setup-environment`. Each one bakes in the right sequence for a recurring task — opening a PR with the right title, polling CI and fixing failures, scoring the AI rules across eight criteria — so the workflow doesn't drift between sessions.
+6. **Rules audit on rule changes.** Editing CLAUDE.md, MVP.md, an ADR, or a slash command triggers `/rules-audit` before and after, with the before/after scores in the PR description. The point is to keep the operating manual from rotting as the project grows.
+
+What worked: putting "millimetres are the canonical unit, px is render-only" in an ADR before writing any canvas code. Every coordinate question after that had an obvious answer. What got reworked least: the data model in MVP.md — `Project`, `Wall`, `FixedPoint`, `Module`, `Preferences`, `Layout` survived from the spec into the code essentially unchanged. What got reworked most: the validator's repair-loop prompts, because the violation messages have to be actionable enough for the LLM to fix the layout, not just diagnose it.
+
+## Architecture
+
+A pnpm + Turborepo monorepo with two apps and one shared package.
+
+```
+apps/web   →  React 18 + Vite + Konva (via react-konva) + Zustand + Tailwind
+apps/api   →  Hono on Node + better-sqlite3 + Anthropic SDK
+packages/shared
+           →  Project / Wall / FixedPoint / Module / Preferences / Layout types
+              STANDARD_MODULES, CLEARANCES, WORK_TRIANGLE constants
+              validator.ts — deterministic layout validator
+```
+
+The frontend talks to the backend over `/api/*`, which Vite proxies to `http://localhost:3001` in dev. The LLM is never called from the browser — every request goes through `apps/api`, every response comes back through a Zod-validated tool call. Q&A is streamed one question at a time; layout generation is a single non-streamed call with the validator-repair loop behind it.
+
+The canvas is a single Konva `Stage` with three layers: background (the uploaded blueprint, faded), structure (walls and fixed points), and modules. Walls are `Line` shapes with a wide hit-stroke for easy selection. Modules are `Group`s with a coloured `Rect` and a `Text` label, snap-aligned to wall edges within 30 mm and to other modules within 10 mm. Rotation is 90° increments via `R` — no free rotation in the MVP. Every coordinate is stored in millimetres; pixel coordinates are computed at render time via `pxPerMm` and never persisted.
+
+Persistence is one row per project in SQLite — `(id, name, created_at, data_json)` — with the entire `Project` serialised as JSON. Blueprint images live on the local filesystem under `apps/api/uploads/<projectId>/`. The frontend keeps a synced copy in Zustand and persists on meaningful transitions (wall trace complete, scale set, fixed point placed) — not on every drag tick. ADR-003 makes the JSON-blob choice explicit: this is an MVP, premature normalisation is not the friend, and the project-level read/write pattern matches how the data is actually used.
+
+The validator is the most important code in the repo. It runs eight checks in order: containment (every module footprint inside the wall polygon), no overlap, wall adjacency for non-island cabinets within 50 mm, fixed-point alignment (sink within 600 mm of water+drain, hob within 600 mm of gas/electric, fridge/dishwasher within 600 mm of an electric point), door swing clear, walkway clearance ≥ 900 mm, work triangle within 1200–2700 mm legs and ≤ 7900 mm perimeter, and appliance front clearance of 1100 mm. Each violation includes a human-readable message and references the offending module ids, which is what makes the LLM repair loop tractable.
+
+## Outcomes
+
+In active development against the MVP spec. The monorepo is wired up, both apps boot, SQLite is up, the shared types and constants are in `packages/shared`, and project create/list/delete works end-to-end. CI gates are enforced on every PR: `pnpm lint`, `pnpm type-check`, `pnpm build`, and the validator unit tests. Branch protection blocks direct pushes to main; every change goes through a PR.
+
+The most useful outcome so far isn't features shipped — it's the workflow itself converging with clity's. Constitution / MVP / CLAUDE.md / ADRs / backlog / slash commands keep proving to be a repeatable pattern for non-trivial agent-built projects, and galley is the second project to use it end-to-end. The pieces that vary between projects are the ADRs and the validator (here: deterministic layout checks; in clity: the agent contract for the generated CLI). The scaffolding around them is the same shape.
+
+## What I'd do differently
+
+Two things, both about being more deliberate up front.
+
+First, I'd write the validator's hand-crafted unit-test fixtures before the validator itself — a rectangular room, an L-shape, an island, a door-swing collision, a work-triangle violation. The validator is the source of truth for correctness; the tests are the source of truth for the validator. Writing them in the other order makes it tempting to shape the tests around the implementation rather than around the spec checks.
+
+Second, I'd ADR the LLM repair-loop budget (3 iterations, then return best-effort with a UI warning) on day one rather than as ADR-004's last paragraph. That number is a product decision dressed up as an implementation detail — too low and the layout quality drops, too high and the generation gets slow and expensive — and it deserves its own decision record so future changes have to argue against it explicitly.
