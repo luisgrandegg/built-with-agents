@@ -1,0 +1,80 @@
+---
+title: "looksee"
+oneLiner: "Self-hosted visual regression testing for Storybook — three commands, no SaaS, baselines in your own repo."
+status: live
+year: 2026
+role: solo
+stack:
+  - "TypeScript"
+  - "Node.js"
+  - "Lost Pixel"
+  - "Playwright"
+  - "GitHub Actions"
+  - "Docker"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/looksee"
+  publicUrl: "https://www.npmjs.com/package/looksee"
+order: 8
+featured: false
+---
+
+## The problem
+
+Visual regression testing for Storybook is a solved problem if you're willing to pay a SaaS — Chromatic, Percy, Lost Pixel Cloud all do the job. The wiring on your own infra is also a solved problem if you're willing to spend a day reading docs: Lost Pixel handles the diffing, Playwright handles the rendering, GitHub Actions handles the pipeline, Docker handles the cross-platform pixel-stability problem. The reason most projects skip it isn't capability — it's that nobody wants to spend a day stitching four tools together when they could be writing features.
+
+looksee is the stitching, packaged as a CLI. `npx looksee init` detects your package manager, detects your Storybook setup, writes a `lostpixel.config.ts`, a `.github/workflows/visual-regression.yml`, a `scripts/docker-baselines.sh`, patches `package.json` and `.gitignore`, and installs. Three commands later — `init`, `vr:baselines`, `git push` — your next PR fails CI on any visual regression. Baselines stay in your repo, diffs stay in your GitHub artifacts, and there is nothing to sign up for.
+
+## AI workflow
+
+Built with Claude Code on the same heavy scaffold as clity and galley: a constitution, a frozen MVP, a CLAUDE.md session loader, ADRs for load-bearing decisions, a backlog folder enforced by a pre-commit hook, and slash commands for every recurring lifecycle action. The bet is consistent across these projects — putting the operating manual in the repo, in plain Markdown, makes every Claude Code session start from shared context instead of cold.
+
+1. **Constitution before code.** [`CONSTITUTION.md`](https://github.com/luisgrandegg/looksee/blob/main/CONSTITUTION.md) lays out the principles that every change has to respect: self-hosted by default (no SaaS dependency), idempotent commands (re-running `init` does nothing if everything is in place), templates over runtime magic, conservative deps, no telemetry. Claude is told to flag any request that conflicts with the constitution rather than absorbing it. Idempotency in particular pays off every PR — it forces every file write to be a diff-aware operation rather than a clobber.
+2. **CLI and Action are co-versioned.** [ADR-001](https://github.com/luisgrandegg/looksee/blob/main/decisions/ADR-001-co-versioned-cli-and-action.md) is the single most consequential decision: the CLI on npm and the GitHub Action in this repo ship from the same tag. When you install `looksee@1.x`, the workflow it writes references `luisgrandegg/looksee@v1` — guaranteed to exist. That removes a whole class of "version skew between the thing on npm and the thing on the marketplace" failures that any other shape of this project would have inherited.
+3. **MVP.md is the source of truth for scope.** Storybook only, GitHub Actions only, single-repo only — explicitly. Future support for non-Storybook test runners or non-GitHub CI lives in MVP.md's deferred section, not as half-implemented features. "Future work belongs in the README's Limitations section, not in the code" is a rule Claude can cite back when scope creeps in mid-task.
+4. **Backlog as ground truth.** Features live as files in `backlog/todo/` and move to `backlog/completed/` with a commit; a pre-commit hook fails if the same feature exists in both. This makes "what's left" a directory listing and "is this done" a git history check — for me and for any agent picking up where the previous session left off.
+5. **Slash commands for every recurring action.** `/setup-environment`, `/create-pr`, `/watch-pr`, `/review-pr`, `/tackle-backlog`, `/rules-audit`, `/release`. Each one bakes in the right sequence for a recurring task so the workflow doesn't drift between sessions. `/setup-environment` is the contributor-facing one — a guided OS-aware setup that gets a new contributor's machine ready without a hand-written README walkthrough.
+6. **Example consumer in the repo.** `example/` is a real Storybook 8 project that uses the CLI's outputs verbatim. Every change to the templates is verified against `example/` before it can land — a kind of integration test that catches the "the templates compiled but the workflow doesn't actually run" class of bugs that unit tests can't see.
+
+What worked: writing the constitution and ADR-001 before any code. Co-versioning was the kind of decision that's cheap to make on day one and expensive to retrofit. What got reworked least: the CLI's command surface — `init`, `doctor`, `--help`, `--version` — which is intentionally tiny and survived the whole project unchanged. What got reworked most: the docker baseline script, because pixel stability between local macOS and CI Linux is the single hardest part of self-hosted visual regression testing, and it took several iterations of the docker setup before baselines round-tripped cleanly.
+
+## Architecture
+
+One repo, two shipped artefacts, co-versioned.
+
+```
+looksee/
+├── action.yml                  # Composite Action consumed via `uses: luisgrandegg/looksee@vN`
+├── bin/looksee.js              # CLI shim
+├── src/                        # CLI TypeScript source
+│   ├── commands/init.ts        # The bulk of the product
+│   ├── commands/doctor.ts      # Diagnose common setup issues
+│   └── templates/              # lostpixel.config.ts, workflow, docker script
+├── example/                    # Reference Storybook 8 consumer
+├── docs/                       # adoption.md, troubleshooting.md, upgrade.md
+└── decisions/                  # ADRs
+```
+
+The CLI is a TypeScript Node package built with `tsup`, distributed on npm. It does five things in `init`: detect package manager from the lockfile (`npm` / `yarn` / `pnpm`), detect Storybook from `.storybook/` or the `storybook` script in `package.json`, copy the templates (`lostpixel.config.ts`, `.github/workflows/visual-regression.yml`, `scripts/docker-baselines.sh`), patch `package.json` (add `vr:test` / `vr:baselines` / `vr:update` scripts and `lost-pixel` to devDependencies), and patch `.gitignore`. Every file write checks current state first — re-running `init` writes nothing if everything is already in place.
+
+The composite Action in `action.yml` is what the workflow template references. It accepts `node-version`, `storybook-build-script`, `storybook-output-dir`, `working-directory`, `comment-on-pr`, and `artifact-retention-days` as inputs, then runs the install + build + Lost Pixel sequence on the consumer's repo. Diff artifacts upload to GitHub's own artifact storage on the consumer's account; on PR failure, a sticky comment links to them.
+
+The docker script is the load-bearing piece for cross-platform consistency. Storybook captures via Playwright produce different pixels on macOS vs Linux for non-trivial reasons (font rendering, antialiasing, GPU compositing). `scripts/docker-baselines.sh` runs the baseline capture inside a Linux container that matches the CI image, so the baselines committed from a developer's macOS laptop are byte-identical to what CI re-renders. The flag `--working-dir <path>` makes monorepo subdirectories work without any per-monorepo configuration.
+
+Docs are deliberately three files: `adoption.md` (the full walkthrough plus the manual fallback for anyone who wants to skip the CLI), `troubleshooting.md` (start here when something is wrong, especially baseline drift), and `upgrade.md` (version compatibility table and breaking-change list). New contributors run `/setup-environment` from a Claude Code session and get a guided OS-aware setup instead of a README.
+
+## Outcomes
+
+Shipped on npm as `looksee` and as a GitHub Action at `luisgrandegg/looksee`. The three-command quickstart works end-to-end against the `example/` Storybook 8 consumer in CI. `init` is idempotent; `doctor` diagnoses the half-dozen most common setup issues (missing `.storybook/`, no Storybook build script, missing GH token, baselines not committed, working-dir mis-configured). The composite Action posts a sticky PR comment on failure with links to the diff artifacts.
+
+The interesting outcome isn't the feature list — it's that adoption is genuinely three commands. The constitution's idempotency principle and ADR-001's co-versioning together mean the user never has to think about which version of the CLI matches which version of the Action; the `init` command always writes the right ref. That's the difference between a tool you can adopt in five minutes and one you set aside because the docs imply a rabbit hole.
+
+## What I'd do differently
+
+Two things, both about test surface.
+
+First, I'd run the `example/` consumer through CI from the very first commit, not after the templates settled. The integration story — "the templates compile and the workflow on the consumer side actually goes green" — is what looksee is selling. Verifying that early would have caught two template bugs that only surfaced when I wired `example/` up later.
+
+Second, I'd write the docker baseline script before the rest of the templates rather than as a follow-up. Pixel stability across platforms is the single hardest part of self-hosted visual regression testing, and starting from "the docker capture round-trips against CI" would have shaped the rest of the templates around that constraint instead of bolting it on.

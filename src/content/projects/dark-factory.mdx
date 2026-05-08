@@ -1,0 +1,68 @@
+---
+title: "dark-factory"
+oneLiner: "A lights-out software development system — a cloneable template where Claude Code agents take work from intake to merged PR with minimal human steering."
+status: wip
+year: 2026
+role: solo
+stack:
+  - "Claude Code"
+  - "GitHub Actions"
+  - "MCP"
+  - "Markdown"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/dark-factory"
+order: 7
+featured: true
+---
+
+## The problem
+
+A "dark factory" in manufacturing is a fully automated plant that runs without human presence on the floor. Lights off, conveyors moving, robots working through the night. The software equivalent is the obvious next step in agent tooling — a repository where agents take work items from intake (issue, alert, scheduled task) all the way to a merged PR, with humans on call for the handful of decisions that genuinely need human judgement and nothing else.
+
+The interesting question isn't "can an agent write code?" — that's been answered. It's "what is the smallest set of moving parts that makes a fleet of agents reliably ship code without supervision?" A fleet needs intake, planning, implementation, review, integration, observability, and guardrails. Each piece has to fail closed: a budget overrun escalates, a risky action escalates, a flaky test escalates. The product isn't a single agent that's smart enough — it's a factory floor that's boring enough that the smart-agent failures don't accumulate into chaos.
+
+dark-factory is the design of that floor: a template you clone to bootstrap a repo with all of it pre-wired.
+
+## AI workflow
+
+Built with Claude Code, but the meta-twist is that the project is *about* the workflow itself. The repo is currently design-only — docs and ADRs, no code yet — and the first round of Claude Code sessions has been used to pressure-test the design by treating each component as a tractable agent task and asking "would this actually work?".
+
+1. **Architecture before scaffolding.** [`docs/architecture.md`](https://github.com/luisgrandegg/dark-factory/blob/main/docs/architecture.md) defines the components (Intake, Spec, Plan, Implement, QA, Integrate, Observability, Guardrails), the domain model (the `WorkItem` lifecycle), and the workflows (how a GitHub issue becomes a merged PR). The architecture document is the contract every later artefact has to fit. Claude is instructed to flag any change request that conflicts with it rather than absorbing it.
+2. **The factory metaphor as a thinking tool.** Raw materials → conveyor → workstations → workers → tooling → foreman → quality control → loading dock → control room → andon cord. Mapping each manufacturing concept onto a software equivalent forced the design to name things that are usually implicit — what's the conveyor (GitHub Actions / orchestrator), who's the foreman (the orchestrator routing work and handling failures), what's the andon cord (the human-in-the-loop escalation paths). Once those names are in the docs, every later decision has a place to live.
+3. **Roadmap as phases, not features.** [`docs/roadmap.md`](https://github.com/luisgrandegg/dark-factory/blob/main/docs/roadmap.md) sequences the build as phases from design → walking-skeleton → first end-to-end WorkItem → robustness → multi-project. Each phase has an exit criterion that's a behaviour, not a checkbox: "a tagged GitHub issue can become a green PR without human intervention" rather than "intake module is done". That keeps the integration story honest at every phase boundary.
+4. **Runbook and escalation playbook before the system exists.** Writing [`docs/runbook.md`](https://github.com/luisgrandegg/dark-factory/blob/main/docs/runbook.md) and [`docs/escalation-playbook.md`](https://github.com/luisgrandegg/dark-factory/blob/main/docs/escalation-playbook.md) before the code surfaces the operational questions that get hand-waved otherwise — what does the on-call human actually look at, how do they recover an escalated WorkItem, where does cost live, how do you stop the factory. Those documents are the spec for the observability layer; building the dashboard becomes a matter of "satisfy the runbook".
+5. **ADRs for load-bearing decisions.** Each architectural call that's expensive to reverse — orchestrator shape, isolation strategy for agent runs, how budgets are enforced, what tools are allow-listed by default, how escalation routes work — gets an ADR in [`docs/adrs/`](https://github.com/luisgrandegg/dark-factory/tree/main/docs/adrs). Editing an ADR means writing a superseding one, not silently breaking the rule.
+6. **Negative tests as first-class citizens.** [`docs/testing.md`](https://github.com/luisgrandegg/dark-factory/blob/main/docs/testing.md) gives equal weight to smoke tests ("a normal WorkItem flows through and merges") and negative tests ("a budget-exceeding WorkItem escalates instead of merging; a risky-action WorkItem stops at the gate; a failing-CI WorkItem doesn't auto-merge"). The factory is only as trustworthy as its failure modes — the negative tests *are* the trust.
+
+What worked: writing the runbook and escalation playbook before any code. They're the documents that surface the questions you'd otherwise discover at 2 a.m. when the factory is on fire. What got reworked least: the factory metaphor itself, which has held up as a structuring device for everything else. What got reworked most: the boundary between "orchestrator" and "agent" — how much logic lives in the conveyor vs. inside each workstation — because that's where the practical limits of current agent tooling and the aspirational design rub against each other.
+
+## Architecture
+
+The template (when it ships) will pre-wire a new GitHub repository with seven layers, each with a clear contract:
+
+- **Intake.** Issues, alerts, and scheduled tasks land in a triage queue. A triage agent labels, deduplicates, and either rejects the item or promotes it to a `WorkItem` with a `spec` slot ready to be filled.
+- **Planning.** A spec agent fills the spec — problem statement, acceptance criteria, file-level pointers — and a planning agent decomposes it into tasks. Each task carries the file pointers that make implementation tractable for a downstream agent that doesn't have the whole repo in context.
+- **Implementation.** A Claude Code agent picks a task, branches from main, and works on an isolated branch. Tool allow-lists and budgets are scoped to the task.
+- **Review and QA.** A review agent reads the diff against the spec; tests, lint, and type-checks run as GitHub Actions. Anything that fails closes the loop back to Implementation; anything that's risky (touches auth, migrations, infra) escalates.
+- **Integration.** Green PRs merge automatically; risky ones queue for a human. The merge step is the same gate every PR passes through, regardless of provenance.
+- **Observability.** Per-run logs, token spend, success rate, failure clusters, time-to-merge. The control room is a dashboard you open once a day, not a live console.
+- **Guardrails.** Tool allowlists per workstation, budgets per WorkItem and per day, approval gates for destructive operations, a kill switch.
+
+The domain model is the `WorkItem` and its lifecycle: `intake → triaged → spec'd → planned → in-progress → in-review → integrated | escalated | rejected`. Each transition is a small, idempotent operation owned by exactly one workstation. The orchestrator routes WorkItems between workstations and is the single thing the runbook talks to. Failures don't crash the factory; they move the WorkItem to `escalated` and surface in the dashboard with a link to the escalation playbook.
+
+The template is deliberately language- and stack-agnostic. The factory floor doesn't know whether the product being built is TypeScript, Python, or Rust; per-project specialisation happens after clone, by editing the workstation prompts and tool allowlists. The default template ships with sane defaults for a Node.js + GitHub-hosted project; everything else is a fork-and-edit.
+
+## Outcomes
+
+Design-only as of writing — the docs, the architecture, the metaphor, the runbook, the escalation playbook, and the first round of ADRs are in place. The roadmap's next phase is the walking skeleton: a minimal orchestrator and a single workstation (Implement) that can take a hand-authored `WorkItem` and produce a PR. After that, the phases go end-to-end-WorkItem → robustness → multi-project.
+
+The most useful outcome so far is the negative result: writing the runbook and escalation playbook before the system surfaced the operational questions that any "agents shipping code" project has to answer eventually. Most of those questions don't have obvious answers, and the time to discover that is before the orchestrator is a real thing with real WorkItems flowing through it.
+
+## What I'd do differently
+
+Nothing structural yet — the design phase is doing what it's supposed to. The bet that's still un-tested is whether the workstation boundaries are drawn in the right places, and the only way to find out is to build the walking skeleton and watch a real WorkItem flow through it.
+
+The one thing I'd already change if I were starting today: name the `WorkItem` more precisely from day one. "Item" is too generic; the distinct shapes — bug, feature, alert response, scheduled task, refactor — have meaningfully different lifecycles, and the orchestrator's routing logic is going to want to dispatch on that type. Picking the discriminator before the orchestrator is built is a much smaller change than retrofitting it after the dashboard reports start aggregating across types that should never have shared a column.
