@@ -9,6 +9,8 @@ const all = await getCollection('projects');
 const sorted = all.sort((a, b) => a.data.order - b.data.order);
 const featured = sorted.find((p) => p.data.featured);
 const rest = featured ? sorted.filter((p) => p.id !== featured.id) : sorted;
+const built = rest.filter((p) => p.data.category !== 'planning');
+const planning = rest.filter((p) => p.data.category === 'planning');
 ---
 
 <BaseLayout title="Built with Agents">
@@ -25,5 +27,6 @@ const rest = featured ? sorted.filter((p) => p.id !== featured.id) : sorted;
     )
   }
 
-  <ProjectGrid projects={rest} />
+  <ProjectGrid projects={built} />
+  <ProjectGrid projects={planning} heading="Planning" />
 </BaseLayout>

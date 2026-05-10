@@ -1,0 +1,83 @@
+---
+title: "Buendía"
+oneLiner: "Self-hostable second brain — capture links, let AI summarize and tag them, search semantically, get nudged to revisit. Bring your own LLM key."
+status: wip
+year: 2026
+role: solo
+category: planning
+stack:
+  - "Next.js"
+  - "TypeScript"
+  - "Postgres"
+  - "pgvector"
+  - "Drizzle"
+  - "pg-boss"
+  - "Tailwind"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/buendia"
+order: 21
+featured: false
+---
+
+## The problem
+
+Read-it-later apps are passive: things go in, very few come back out. Notion and Obsidian are great editors and bad capture surfaces — you don't open Notion to save a YouTube video on your phone. Existing AI-flavoured second brains lock you into a vendor's model, a vendor's hosting, and a vendor's data store.
+
+Buendía's bet: a "second brain" worth using is **active** (it surfaces things at the right time), **provider-agnostic** (any LLM, including local), and **self-hostable end-to-end** (no mandatory third-party services, AGPL'd). Drop a URL via web, browser extension, or share sheet — Buendía extracts the content, summarizes it, suggests tags, embeds it for semantic search, and queues it for resurfacing in a weekly digest.
+
+## AI workflow
+
+This entry documents a planning-phase project. There's no application yet — there's an MVP spec, a constitution, and a future-skills doc. The shape of the workflow is "constitution-first, MVP-second, code last," and the three documents do different jobs on purpose.
+
+1. **Constitution before code.** The constitution describes the long-term aspiration (a personal cloud where users compose skills against a shared personal-context layer) and lays down the principles that will keep MVP decisions aligned with that aspiration: user sovereignty, open by default, AI-native not AI-bolted-on, boring-opinionated stack, Postgres-first. It's explicitly a guide for decisions, not a roadmap of features. When a design choice feels generic ("should we make this configurable?"), or scope is creeping, or a "platform-shaped" idea appears — that's when the constitution gets reread.
+2. **MVP narrows, ruthlessly.** The MVP spec covers exactly what v1 ships: capture (web, extension, PWA share target), AI processing (extract → chunk → embed → summarize+tag), browse + semantic search, weekly digest with three items. Native mobile, knowledge graph viz, RAG chat, multi-user, paywall bypass — all explicitly out, with reasons.
+3. **Future-skills as a pressure test, not a roadmap.** A separate doc walks through the next few skills that *might* live on the same platform (calendar assistant, codebase memory, etc.) and asks one question: would the MVP's data model survive each of them? That exercise locked in three early decisions before code started — skill-agnostic schemas, a fixed embedding dimension at v1, named-abstraction conventions — that would have been painful retrofits later.
+
+Where Claude actively shapes the work is the boundary between the three docs. The MVP spec wants to grow; the constitution and the future-skills exercise pull it back. When the MVP felt like it was sprouting platform-shaped features ("should the worker be pluggable?"), Claude was the second voice asking "is that a v1 problem or a v3 problem?" The constitution gave that question a concrete answer most of the time.
+
+## Architecture
+
+Two long-running processes, one Postgres.
+
+```
+┌─────────────────────┐     ┌──────────────────────┐
+│  Browser Extension  │────▶│                      │
+│      (WXT)          │     │   Next.js App        │
+└─────────────────────┘     │   - /api/capture     │
+┌─────────────────────┐     │   - /api/items       │
+│   Web App (PWA)     │────▶│   - /api/search      │
+│  + Web Share Target │     │   - /api/settings    │
+└─────────────────────┘     │   - UI routes        │
+                            └──────────┬───────────┘
+                                       │
+                                       ▼
+                            ┌──────────────────────┐
+                            │   Postgres + pgvector│◀──┐
+                            │   - items, tags,     │   │
+                            │     embeddings,      │   │
+                            │     pgboss.* tables  │   │
+                            └──────────┬───────────┘   │
+                                       │               │
+                                       ▼               │
+                            ┌──────────────────────┐   │
+                            │   Worker process     │   │
+                            │   (pg-boss consumer) │───┘
+                            └──────────────────────┘
+```
+
+`web` (Next.js 15, App Router) handles capture, browsing, search, settings. `worker` is a pg-boss consumer that handles the slow path: fetch + extract (Readability for articles, transcript for YouTube), chunk, embed, summarize + tag in a single `generateObject` call with a Zod schema, persist, schedule a revisit in seven days.
+
+Provider abstraction goes through the Vercel AI SDK so any user can plug in Anthropic, Google, OpenAI, OpenRouter, or local Ollama. API keys are encrypted with AES-256-GCM at rest, decrypted just-in-time, and never leave the server. Embedding dimension is fixed at v1 (768, Gemini-compatible) — switching embedding providers requires a "re-embed all items" action and an explicit warning, because `vector(N)` columns lock the dimension at creation time.
+
+Postgres-first across the board: pgvector for embeddings, pg-boss for the queue, `pg_trgm` + cosine distance for hybrid search. No Redis, no dedicated vector DB, no Inngest. The whole thing runs on `docker compose up` with one DB container.
+
+## Outcomes
+
+Spec is written. Implementation hasn't started. Phase 0 (scaffold, migrations, docker-compose, README quickstart) is the next deliverable, gated by Phase 1 (auth + capture), Phase 2 (worker + AI pipeline + BYOK), Phase 3 (browse + search), Phase 4 (resurfacing + digest), Phase 5 (extension), Phase 6 (polish + ship). Each phase has a hard "Done when" criterion before the next one begins.
+
+## What I'd do differently
+
+The lesson from earlier projects (`clity` especially) was that writing the constitution first makes every later decision faster — "does this preserve the I/O contract?" becomes a one-line check, not a debate. Buendía starts that way intentionally. The thing I'm watching for, going in, is the opposite failure mode: a constitution detailed enough to *constrain* the MVP into never shipping. If the MVP and the constitution disagree, the rule is **the MVP wins for what we ship**, and the constitution gets amended to match reality. We'll see how often that rule actually gets used.

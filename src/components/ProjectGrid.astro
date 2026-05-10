@@ -4,16 +4,17 @@ import ProjectCard from './ProjectCard.astro';
 
 interface Props {
   projects: CollectionEntry<'projects'>[];
+  heading?: string;
 }
 
-const { projects } = Astro.props;
+const { projects, heading = 'All projects' } = Astro.props;
 ---
 
 {
   projects.length > 0 && (
-    <section aria-label="All projects" class="mx-auto max-w-3xl px-6">
-      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-muted)] mb-2">
-        All projects
+    <section aria-label={heading} class="mx-auto max-w-3xl px-6">
+      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--color-muted)] mt-12 mb-2">
+        {heading}
       </h2>
       <ul class="list-none p-0 m-0">
         {projects.map((project) => (

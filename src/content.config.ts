@@ -10,6 +10,7 @@ const projects = defineCollection({
       status: z.enum(['live', 'archived', 'wip']),
       year: z.number().int(),
       role: z.enum(['solo', 'lead', 'contributor']),
+      category: z.enum(['build', 'planning']).default('build'),
       stack: z.array(z.string()),
       aiTools: z.array(z.string()),
       links: z

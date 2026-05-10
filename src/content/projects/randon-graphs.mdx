@@ -1,0 +1,63 @@
+---
+title: "randon-graphs"
+oneLiner: "Ask plain-language questions about public statistical data and get back a chart with the source attributed — no SQL, no dataset hunting."
+status: wip
+year: 2026
+role: solo
+category: planning
+stack:
+  - "TypeScript"
+  - "Postgres"
+  - "JSON-stat"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/randon-graphs"
+order: 20
+featured: false
+---
+
+## The problem
+
+Public statistical data — INE, Eurostat, municipal open data — is rich but hard to access for non-technical users. Querying it requires knowing what datasets exist, how they're structured, and how to filter them. The hope is that a user can ask "population of cities in Spain" or "unemployment in Madrid by district" and get back a chart with the source clearly attributed, without ever touching the publisher's API or schema.
+
+The catch is that LLMs hallucinate freely when asked to retrieve numeric data. A working system has to keep the model away from the numbers entirely: let it reason over a curated metadata index, produce a structured query plan, and then execute that plan against the real source.
+
+## AI workflow
+
+This entry documents a project still in its planning phase. There's no application yet — there's an MVP spec and a starter dataset list. The work to date has been collaborative spec writing with Claude, in two distinct passes.
+
+1. **Shape the architecture.** The first pass split the system into an offline indexer (crawls sources, infers descriptions, gates them behind manual review) and an online query service (LLM reads metadata, emits a structured query plan, the plan is validated and executed). Claude helped pressure-test that boundary by walking through failure modes — what happens when the LLM picks a plausible-but-wrong dataset, when validation fails, when a re-crawl changes a dimension.
+2. **Lock down the contracts.** The second pass turned that architecture into typed contracts: the metadata schema (with `dimensions`, `measures`, `fetcher`, `status`), the `NormalizedResult` shape that the chart layer consumes, and the query-plan grammar (`filters`, `group_by`, `measure`, `chart_hint`, `rationale`). The validation pipeline runs before any fetcher executes — `dataset_id` exists and is `live`, every filter dimension is real, every `op` is compatible with the dimension's type, every value is in range. If validation fails, the LLM gets one retry call with concrete feedback and that's it.
+
+Two decisions were deliberately front-loaded. The `description` field on each dataset is the single biggest quality lever — it's what the query LLM uses to pick between two plausible datasets, so the indexer's description-inference prompt is part of the spec, not a future TODO. The starter dataset set (eight INE operations spanning topics, granularity, and chart types) was picked to stress-test the pipeline in a specific order: ECP first (simplest shape, anchors the original example), IPC next (time-series + categorical), EPA after (multi-dimensional `group_by`). By the time hand-written metadata for the third dataset is done, the architecturally interesting cases have all been touched.
+
+## Architecture
+
+Two paths, one metadata store.
+
+```
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│  Indexer Worker │─────▶│  Metadata Store  │◀─────│  Query Service  │
+│  (scheduled)    │      │  (datasets +     │      │  (LLM + fetch)  │
+└─────────────────┘      │   schemas)       │      └────────┬────────┘
+        │                └──────────────────┘               │
+        ▼                                                   ▼
+   Data sources                                       Visualization
+   (INE, ...)                                         (chart + source)
+```
+
+The indexer runs nightly, walks each source via a dedicated adapter, and uses an LLM to infer human-readable `description` and `topics` fields from raw metadata. New records land as `pending_review` — invisible to the query service until a human approves them. Re-crawls only flip approved records back to review when meaningful fields change.
+
+At query time, the service loads the relevant `live` metadata, asks the LLM to produce a query plan, validates the plan, and hands it to the fetch layer. The fetch layer is uniform — `fetch(query_plan, dataset_metadata) -> NormalizedResult` — with adapters underneath. JSON-stat is the primary path (self-describing, what INE actually serves); CSV is a documented fallback that takes a column-mapping in `params_schema`. The chart layer only ever sees `NormalizedResult`, so adding a source means writing an adapter, not changing the query service or the frontend.
+
+Source attribution and the LLM's `rationale` are always shown next to the chart. That's the user's fast path to spotting when the system picked the wrong dataset.
+
+## Outcomes
+
+Spec is written. Implementation hasn't started. The MVP scope is one source (INE via JSON-stat), one indexer adapter, the metadata store with the v0 schema, the query service, a handful of chart types, and source attribution. The build sequence is intentionally inverted: hand-write metadata for a small set of datasets first, build the query service against that, prove the loop end-to-end, *then* automate the indexer to reproduce the same metadata records. That keeps the riskiest piece (LLM → useful query plan) front-loaded and defers the indexer until we know what good metadata looks like.
+
+## What I'd do differently
+
+Too early to say much — but one bet I'm making explicitly is that controlled vocabularies beat free-form tags. The description-inference prompt picks `topics` from a fixed list (demographics, prices, employment, ...) extended only by deliberate amendment. Free-form tags would drift across crawls and break topic-based retrieval before it ever shipped. If it turns out the controlled vocabulary is too narrow to cover real datasets, that's a cheap lesson; if it turns out free-form would have been fine, I'll have spent some effort on a guard that wasn't needed. The asymmetric cost makes the call easy.
