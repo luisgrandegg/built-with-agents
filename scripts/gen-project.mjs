@@ -8,6 +8,7 @@ const PROJECTS_DIR = path.resolve(__dirname, '..', 'src', 'content', 'projects')
 
 const STATUSES = ['live', 'archived', 'wip'];
 const ROLES = ['solo', 'lead', 'contributor'];
+const CATEGORIES = ['build', 'planning'];
 const SECTIONS = [
   ['problem', 'The problem'],
   ['aiWorkflow', 'AI workflow'],
@@ -105,6 +106,9 @@ function validate(spec) {
   if (!STATUSES.includes(fm.status)) e.push(`frontmatter.status must be one of ${STATUSES.join('|')}`);
   if (!Number.isInteger(fm.year)) e.push('frontmatter.year must be an integer');
   if (!ROLES.includes(fm.role)) e.push(`frontmatter.role must be one of ${ROLES.join('|')}`);
+  if (fm.category != null && !CATEGORIES.includes(fm.category)) {
+    e.push(`frontmatter.category must be one of ${CATEGORIES.join('|')}`);
+  }
   if (!Array.isArray(fm.stack) || fm.stack.length === 0 || fm.stack.some(s => !nonEmpty(s))) {
     e.push('frontmatter.stack must be a non-empty array of non-empty strings');
   }
@@ -142,6 +146,7 @@ function renderMdx(spec) {
   lines.push(`status: ${fm.status}`);
   lines.push(`year: ${fm.year}`);
   lines.push(`role: ${fm.role}`);
+  if (fm.category) lines.push(`category: ${fm.category}`);
   lines.push('stack:');
   for (const s of fm.stack) lines.push(`  - ${yaml(s)}`);
   lines.push('aiTools:');
@@ -202,6 +207,7 @@ JSON spec shape (mirrors src/content.config.ts):
       "status": "live" | "archived" | "wip",
       "year": 2025,
       "role": "solo" | "lead" | "contributor",
+      "category": "build" | "planning",   // optional, defaults to "build"
       "stack": ["..."],
       "aiTools": ["..."],
       "links": { "github": "...", "publicUrl": "...", "video": "..." },

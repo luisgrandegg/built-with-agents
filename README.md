@@ -41,6 +41,7 @@ oneLiner: string
 status: 'live' | 'archived' | 'wip'
 year: number
 role: 'solo' | 'lead' | 'contributor'
+category: 'build' | 'planning'      # optional, defaults to 'build'. 'planning' renders in a separate section.
 stack: string[]
 aiTools: string[]                   # e.g. 'Claude Code', 'Cursor'
 links:                              # omit any field you don't have a real URL for
