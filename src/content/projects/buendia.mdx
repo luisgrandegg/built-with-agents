@@ -1,83 +1,101 @@
 ---
 title: "Buendía"
-oneLiner: "Self-hostable second brain — capture links, let AI summarize and tag them, search semantically, get nudged to revisit. Bring your own LLM key."
+oneLiner: "A hosted runtime for AI-generated single-file HTML apps. The app lives on Buendía; the data lives in a Supabase project the user owns, provisioned by Buendía on their behalf."
 status: wip
 year: 2026
 role: solo
-category: planning
+category: build
 stack:
-  - "Next.js"
+  - "Next.js 15"
   - "TypeScript"
-  - "Postgres"
-  - "pgvector"
-  - "Drizzle"
-  - "pg-boss"
+  - "Hono"
+  - "Supabase"
+  - "PostgREST"
+  - "Postgres + RLS"
   - "Tailwind"
+  - "shadcn/ui"
+  - "Turborepo"
 aiTools:
   - "Claude"
   - "Claude Code"
 links:
   github: "https://github.com/luisgrandegg/buendia"
-order: 21
-featured: false
+order: 5
+featured: true
 ---
 
 ## The problem
 
-Read-it-later apps are passive: things go in, very few come back out. Notion and Obsidian are great editors and bad capture surfaces — you don't open Notion to save a YouTube video on your phone. Existing AI-flavoured second brains lock you into a vendor's model, a vendor's hosting, and a vendor's data store.
+A generation of non-programmers is shipping working software by prompting Claude, ChatGPT, v0, Lovable, Bolt. The output is almost always a single HTML file with inline JS and CSS. That file does real work — tracks a project, manages a side hustle, coordinates a household — until the chat closes and it dies: no hosting, no persistence, no real auth, no way to share it with two friends without pasting a database URL into a group chat.
 
-Buendía's bet: a "second brain" worth using is **active** (it surfaces things at the right time), **provider-agnostic** (any LLM, including local), and **self-hostable end-to-end** (no mandatory third-party services, AGPL'd). Drop a URL via web, browser extension, or share sheet — Buendía extracts the content, summarizes it, suggests tags, embeds it for semantic search, and queues it for resurfacing in a weekly digest.
+The dominant response from existing platforms is the walled garden. Bolt, Lovable, Replit, v0 — they all host your app *on their infrastructure, against their database, on their domain, behind their pricing*. Your app cannot be moved. Your data cannot be exported. The skill required to leave is the same skill the user did not have when they started, which is exactly why they used the platform in the first place.
+
+Buendía's bet is that the AI-generated artifact is the user's, and the only correct relationship between the platform and the app is one the user can sever without losing anything. The same HTML works on the platform, on any static host, and as a `file://` double-click. The platform supplies the hard parts — auth, a database, sharing, a URL — and supplies nothing else. The data lives in a Supabase project provisioned in the *user's* own account via OAuth. When a user leaves, they leave with their app and their database, and everything keeps working.
 
 ## AI workflow
 
-This entry documents a planning-phase project. There's no application yet — there's an MVP spec, a constitution, and a future-skills doc. The shape of the workflow is "constitution-first, MVP-second, code last," and the three documents do different jobs on purpose.
+This entry got reset partway through. The original Buendía was a "self-hostable second brain" — capture links, AI summarize them, weekly digest. After a couple of weeks of pressure-testing the spec, the project was rewritten end-to-end into what's described above: a platform for AI-generated single-file HTML apps with a strong user-sovereignty contract. The interesting part of the workflow is what survived the pivot and what didn't.
 
-1. **Constitution before code.** The constitution describes the long-term aspiration (a personal cloud where users compose skills against a shared personal-context layer) and lays down the principles that will keep MVP decisions aligned with that aspiration: user sovereignty, open by default, AI-native not AI-bolted-on, boring-opinionated stack, Postgres-first. It's explicitly a guide for decisions, not a roadmap of features. When a design choice feels generic ("should we make this configurable?"), or scope is creeping, or a "platform-shaped" idea appears — that's when the constitution gets reread.
-2. **MVP narrows, ruthlessly.** The MVP spec covers exactly what v1 ships: capture (web, extension, PWA share target), AI processing (extract → chunk → embed → summarize+tag), browse + semantic search, weekly digest with three items. Native mobile, knowledge graph viz, RAG chat, multi-user, paywall bypass — all explicitly out, with reasons.
-3. **Future-skills as a pressure test, not a roadmap.** A separate doc walks through the next few skills that *might* live on the same platform (calendar assistant, codebase memory, etc.) and asks one question: would the MVP's data model survive each of them? That exercise locked in three early decisions before code started — skill-agnostic schemas, a fixed embedding dimension at v1, named-abstraction conventions — that would have been painful retrofits later.
+1. **Constitution-first survived. The MVP didn't.** The original constitution had nice principles ("user sovereignty, open by default, Postgres-first") but they were generic enough to fit the second brain *or* the platform. After the pivot, [`CONSTITUTION.md`](https://github.com/luisgrandegg/buendia/blob/main/CONSTITUTION.md) was rewritten with eight numbered principles that bind to *this* product: portability over convenience, the platform is opt-in at runtime, the user owns the database, real auth (not URL obscurity), single codebase for SaaS + self-hosted, the SDK is a library (not a runtime), sharing is access (not ownership transfer), the stack (not the vendor). Each principle has a section explaining what it forbids, not just what it encourages. PR descriptions cite the principle numbers that apply.
+2. **CLAUDE.md as contract surface, not TODO list.** [`CLAUDE.md`](https://github.com/luisgrandegg/buendia/blob/main/CLAUDE.md) names the eight principles by number, lists the hard invariants drawn from the constitution's Architecture Invariants section (two backends, RLS on every app table, the SDK has zero privileged operations, every provisioning action has a documented inverse, Buendía's servers never read app data), and enumerates what is permanently out of scope — multi-file apps, server-side user code, AI generation inside the platform, an app marketplace. Pushback is required if a request asks for any of those, and Claude is instructed to flag the conflict and stop before implementing.
+3. **Backlog as files, one per ticket, moved on land.** [`backlog/`](https://github.com/luisgrandegg/buendia/tree/main/backlog) has one Markdown file per unit of work — `00-monorepo-skeleton.md`, `21-schema-provisioner.md`, `30-share-invite-ui.md`. Closing a ticket moves the file into `backlog/done/` in the same commit that lands the work. Twenty tickets are in `done/`; six remain. The agent never has to ask "what's the project state" — `ls backlog/` is the answer, and the commit history reads as one ticket per merge.
+4. **ADRs for load-bearing decisions, before the code.** [`decisions/0001-control-plane-supabase.md`](https://github.com/luisgrandegg/buendia/tree/main/decisions) through `0009-sdk-distribution.md` were written before each corresponding chunk of implementation. They cover the calls that are expensive to reverse: envelope encryption + KMS for backend credentials, Supabase Management OAuth as the provisioning channel, the HTML storage shape, the schema provisioner's contract, the JWT mint flow, the edge serve route, the SDK distribution surface. Agents do not autonomously modify governing docs — an ADR has to be opened first, with a human review before merge.
+5. **The pivot itself, in slow motion.** The trigger was a single uncomfortable question while writing the original second-brain MVP: "what's the smallest version of the platform we'd want for the second brain that *isn't* the second brain?" Working backwards from that produced the real product. Claude was load-bearing here — re-reading the original constitution back at me and asking "is the second brain the platform, or is the second brain *an app* the platform would host?" The answer (the second is more interesting) is what the new product is built around. The old second-brain idea is plausibly the canary app on the new platform; we'll see.
 
-Where Claude actively shapes the work is the boundary between the three docs. The MVP spec wants to grow; the constitution and the future-skills exercise pull it back. When the MVP felt like it was sprouting platform-shaped features ("should the worker be pluggable?"), Claude was the second voice asking "is that a v1 problem or a v3 problem?" The constitution gave that question a concrete answer most of the time.
+What worked: writing the constitution and the ADRs before the code, then refusing to modify them mid-task. The eight-principle list is the single most-referenced artefact in the repo. What got reworked least: the two-backends invariant — control plane is Buendía's, app data is the user's, and they are never mixed. What got reworked most: the SaaS/self-hosted boundary. Early drafts had separate code paths and the constitution explicitly forbids that (Principle §5, "Single codebase, two deployments"), so a chunk of Phase 1 went back through the wringer once the rule was actually enforced.
 
 ## Architecture
 
-Two long-running processes, one Postgres.
+A pnpm + Turborepo monorepo with two long-running services and a published SDK. Two backends are the load-bearing invariant: Buendía owns the control plane; the user owns their app-data backend. The control plane never holds app data.
 
 ```
-┌─────────────────────┐     ┌──────────────────────┐
-│  Browser Extension  │────▶│                      │
-│      (WXT)          │     │   Next.js App        │
-└─────────────────────┘     │   - /api/capture     │
-┌─────────────────────┐     │   - /api/items       │
-│   Web App (PWA)     │────▶│   - /api/search      │
-│  + Web Share Target │     │   - /api/settings    │
-└─────────────────────┘     │   - UI routes        │
-                            └──────────┬───────────┘
-                                       │
-                                       ▼
-                            ┌──────────────────────┐
-                            │   Postgres + pgvector│◀──┐
-                            │   - items, tags,     │   │
-                            │     embeddings,      │   │
-                            │     pgboss.* tables  │   │
-                            └──────────┬───────────┘   │
-                                       │               │
-                                       ▼               │
-                            ┌──────────────────────┐   │
-                            │   Worker process     │   │
-                            │   (pg-boss consumer) │───┘
-                            └──────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Buendía (monorepo)                        │
+│                                                              │
+│  apps/web        Next.js — dashboard, auth, upload, share UI │
+│  apps/edge       Hono — serves user apps with injected config│
+│  packages/sdk    @buendia/sdk — embedded in every user HTML  │
+│  packages/shared TS types, zod schemas, constants            │
+│  packages/db     Migrations, RLS policies, schema provisioner│
+└──────────────────────────────────────────────────────────────┘
+            │                          │
+            ▼                          ▼
+   ┌──────────────────┐      ┌──────────────────────────────┐
+   │Buendía Control DB│      │ Per-user Supabase projects   │
+   │ (Buendía-managed)│      │ (user-owned, OAuth'd in)     │
+   │                  │      │                              │
+   │ users, apps,     │      │ Alice's "Buendía Apps":      │
+   │ app_shares,      │      │   app_tracker.tracker_items  │
+   │ owner_backends,  │      │   app_journal.entries        │
+   │ audit_log        │      │ Bob's "Buendía Apps":        │
+   └──────────────────┘      │   app_recipes.recipes        │
+                             └──────────────────────────────┘
 ```
 
-`web` (Next.js 15, App Router) handles capture, browsing, search, settings. `worker` is a pg-boss consumer that handles the slow path: fetch + extract (Readability for articles, transcript for YouTube), chunk, embed, summarize + tag in a single `generateObject` call with a Zod schema, persist, schedule a revisit in seven days.
+The OAuth flow at signup is what makes the user-sovereignty story architectural, not aspirational. Buendía calls the Supabase Management API on the user's behalf, creates one project named "Buendía Apps" in their organization, fetches the project URL + anon key + service-role key + JWT secret, and stores them envelope-encrypted in `owner_backends` (per-row data key wrapped by a KMS key). From then on every app schema lives inside the user's own project as `app_<slug>`, with `created_by` and `team_id` columns and default RLS auto-generated by the schema provisioner.
 
-Provider abstraction goes through the Vercel AI SDK so any user can plug in Anthropic, Google, OpenAI, OpenRouter, or local Ollama. API keys are encrypted with AES-256-GCM at rest, decrypted just-in-time, and never leave the server. Embedding dimension is fixed at v1 (768, Gemini-compatible) — switching embedding providers requires a "re-embed all items" action and an explicit warning, because `vector(N)` columns lock the dimension at creation time.
+When a user opens an app at `/a/<slug>`, the edge service resolves the app, looks up the owner, decrypts the owner's JWT secret, mints a short-lived (≤15 min) JWT with the requester's user id, role, the app's schema name, and team id as claims, and injects it into the HTML before `</head>`:
 
-Postgres-first across the board: pgvector for embeddings, pg-boss for the queue, `pg_trgm` + cosine distance for hybrid search. No Redis, no dedicated vector DB, no Inngest. The whole thing runs on `docker compose up` with one DB container.
+```html
+<script>window.__APP_CONFIG__ = { ... }</script>
+```
+
+The SDK reads that object, constructs a Supabase client pointed at the owner's project URL with the JWT pre-loaded, and exposes `Buendia.db`, `Buendia.user`, `Buendia.app`, `Buendia.subscribe`. RLS on every app table keys off the JWT claims (`team_id`, `buendia_role`), so a bug in one app's RLS cannot expose another app's data — the JWT will not be accepted against another app's backend.
+
+The same SDK in standalone mode (no `__APP_CONFIG__` present) mounts a setup overlay asking for a Supabase URL + anon key, stores them in `localStorage`, and the app runs against the user's own project with no Buendía in the loop. That is Principle §2 — the platform is opt-in at runtime, and the app code does not branch on mode.
+
+Postgres + Supabase across the board: PostgREST for REST, Realtime for subscriptions, Storage for HTML blobs, Auth for the control plane. The contract is the protocols, not the vendor — self-hosted operators can swap to Supabase OSS or compatible components without forking Buendía's code.
 
 ## Outcomes
 
-Spec is written. Implementation hasn't started. Phase 0 (scaffold, migrations, docker-compose, README quickstart) is the next deliverable, gated by Phase 1 (auth + capture), Phase 2 (worker + AI pipeline + BYOK), Phase 3 (browse + search), Phase 4 (resurfacing + digest), Phase 5 (extension), Phase 6 (polish + ship). Each phase has a hard "Done when" criterion before the next one begins.
+Six of the seven planned phases have landed against the rewritten spec. The control plane (auth, dashboard shell, audit log) is up. Supabase Management OAuth + per-user project provisioning works end-to-end with envelope-encrypted credentials. HTML upload, schema provisioner, edge serve route, JWT mint + refresh, SDK v1 (hosted + standalone), and Realtime subscriptions are all merged. Share invites, role enforcement, and immediate revocation are merged. App rename, delete, version history, export, disconnect, and the landing page are merged.
+
+What's left is the part that proves the rest works: invitation email delivery (Resend integration), the project-tracker canary — the MVP acceptance test that migrates `luisgrandegg/project-tracker` onto Buendía unchanged, with real auth instead of URL-paste-and-pray — the self-hosted `docker compose` recipe, and two operational papercuts that have ADRs but no code yet: OAuth-grant revocation recovery and JWT secret rotation.
+
+Twenty tickets in `backlog/done/`, six in `backlog/`, nine ADRs landed. The constitution has not been amended since the post-pivot rewrite. That's the metric I care about.
 
 ## What I'd do differently
 
-The lesson from earlier projects (`clity` especially) was that writing the constitution first makes every later decision faster — "does this preserve the I/O contract?" becomes a one-line check, not a debate. Buendía starts that way intentionally. The thing I'm watching for, going in, is the opposite failure mode: a constitution detailed enough to *constrain* the MVP into never shipping. If the MVP and the constitution disagree, the rule is **the MVP wins for what we ship**, and the constitution gets amended to match reality. We'll see how often that rule actually gets used.
+The pivot was right, but it cost real time. The original second-brain MVP had detailed schemas, a worker, an embedding strategy, a digest job — a working architecture for the wrong product. None of that survived; the rewrite was end-to-end. If I'd treated the very first constitution as a *generic* document and forced a one-sentence "this is the product, here is the proof it isn't a different product" exercise before writing the original MVP, I would have caught the platform-shaped idea before two weeks of spec went into the version that didn't survive.
+
+The other thing I'd change: the OAuth + provisioning flow is the highest-stakes piece of code in the system and it was scoped as one ticket. Twice. In hindsight it wanted to be four — start the OAuth dance, persist the grant, call the Management API to create the project, fetch and encrypt the credentials — each with its own "Done when" criterion. The integration tests caught the bugs eventually; finer slicing would have caught them in the PR that introduced them, before they had a chance to mask each other.
