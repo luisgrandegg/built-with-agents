@@ -1,0 +1,95 @@
+---
+title: "Curio"
+oneLiner: "A voice-first study tutor for children aged 8–10. Snap a photo of a school lesson, and an AI tutor named Pip runs a short spoken quiz — asking out loud, listening to the child's answers, and tracking progress on a visual scorecard."
+status: wip
+year: 2026
+role: solo
+category: build
+stack:
+  - "Next.js 16"
+  - "React 19"
+  - "NestJS 11"
+  - "TypeScript"
+  - "LiveKit"
+  - "Gemini"
+  - "Deepgram"
+  - "Cartesia"
+  - "Turborepo"
+aiTools:
+  - "Claude"
+  - "Claude Code"
+links:
+  github: "https://github.com/luisgrandegg/curio"
+order: 4
+featured: true
+---
+
+## The problem
+
+Children aged 8–10 who struggle with reading — dyslexic kids especially — get hit twice by conventional study tools. First the lesson is hard; then the *tool meant to help* puts a wall of text in front of them and asks them to read and type their way through it. The decoding barrier becomes the barrier to everything behind it, and a child who understands the material perfectly well looks like a child who doesn't.
+
+Curio's bet is that for this age and this audience, the quiz should happen the way a patient adult would do it at the kitchen table: out loud. A child (or parent) takes a photo of a school lesson; Curio extracts the key concepts; then an AI tutor named **Pip** runs a short spoken quiz — asking questions aloud, listening to the child's spoken answers, giving warm feedback, and tracking progress on a visual scorecard. Voice-first isn't a feature bolted onto a reading app; it's the design constraint that everything else bends around. The core quiz path never requires reading or typing, which sidesteps the decoding barrier entirely and meets a young child where they actually are.
+
+The second, quieter bet is about *who the product serves first*. A child's wellbeing comes before engagement, before completion rates, before everything. Pip is always kind — "good try!", one gentle hint, then the answer, never letting a child get stuck — but the verdict it logs to the scorecard is its honest judgement. The child hears warmth; the parent gets truth. Holding those two things apart, deliberately, is the heart of the product.
+
+## AI workflow
+
+Curio was built solo with Claude and Claude Code, and the interesting part of the workflow is how much of the steering was moved *out* of the prompts and *into* committed artifacts that the agent had to obey on every task.
+
+1. **Constitution before code, and it actually constrains.** [`Constitution.md`](https://github.com/luisgrandegg/curio/blob/main/Constitution.md) states the non-negotiables — a child's wellbeing first, voice-first on the core path, warmth to the child but honest verdicts to the scorecard, providers behind interfaces, "simplest thing that works." These aren't decoration: [`CLAUDE.md`](https://github.com/luisgrandegg/curio/blob/main/CLAUDE.md) lifts them into a "Non-negotiables" list and treats the accessibility and child-safety sections of `MVP.md` as *acceptance criteria*, not nice-to-haves. When a task drifted toward putting text on the quiz path "just for fallback," the rule was already written down to push back against.
+2. **The backlog is the project state.** The MVP was cut into 19 PR-sized slices, B00–B18, in dependency order, each with its own acceptance criteria and verification step ([`backlog/`](https://github.com/luisgrandegg/curio/tree/main/backlog)). Two are starred as load-bearing checkpoints — the vision endpoint (B03) and the agent's first audio in the room (B07) — with an explicit "get it solid before building on it." Each session picks the next unblocked item; `backlog/README.md` is always the source of truth for what's done and what's next.
+3. **ADRs for anything a future contributor would otherwise reverse-engineer.** Seventeen ADRs in [`docs/adr/`](https://github.com/luisgrandegg/curio/tree/main/docs/adr) capture the decisions that were expensive to reverse — and one captures a *reversal*: ADR-0004 chose Koyeb for hosting, ADR-0005 superseded it with a self-hosted VPS on cost grounds, and the old ADR stays in the tree marked superseded rather than being rewritten. ADRs are immutable once merged; to change a decision you add a new one. That discipline made the history legible instead of a sequence of silent pivots.
+4. **Quality bars enforced by the harness, not by vibes.** Source files stay under 300 lines, every change ships with tests and holds a 70% coverage floor, dependencies are pinned (no `^`/`~`), TypeScript is strict with no unexplained `any`. A `pre-push` husky hook runs `turbo run lint test build --affected`, and CI runs the same affected gate plus `format:check`, so "green locally" really does mean "green in CI." The agent couldn't merge its way past a broken checkpoint.
+5. **Child-safety guardrails locked by tests.** Pip's behaviour — scope-locked to the lesson, never asking for personal information, redirecting negative self-talk, one hint then the answer — is pinned by `apps/agent/src/prompt.safety.test.ts`, with a separate manual [child-safety checklist](https://github.com/luisgrandegg/curio/blob/main/docs/child-safety-checklist.md) for verifying against a real model. Safety regressions show up as red tests, not as something a reviewer has to catch by reading the prompt.
+
+What worked best was the combination: a constitution that says *why*, a backlog that says *what's next*, ADRs that say *what we already decided*, and a pre-push gate that refuses to let any of it slip. The agent spent its judgement on the slice in front of it, not on re-litigating settled decisions.
+
+## Architecture
+
+A pnpm + Turborepo monorepo with three apps and two shared packages. The spine of the product is a LiveKit room: the child's browser and a long-running "Pip" worker both join it, audio flows over WebRTC, and structured quiz updates flow over a reliable data channel on the same connection — no second WebSocket.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     Curio (monorepo)                          │
+│                                                               │
+│  apps/web     Next.js 16 / React 19 — capture → review → quiz │
+│  apps/api     NestJS 11 — vision, sessions, tokens, read-aloud│
+│  apps/agent   @livekit/agents worker — "Pip", STT→LLM→TTS     │
+│  packages/types   shared contracts   packages/config  lint/ts │
+└──────────────────────────────────────────────────────────────┘
+
+  child + parent ──photo+subject/age──▶ apps/web
+                                          │  POST /lessons (vision)
+                                          ▼
+                                       apps/api ───────▶ Gemini (vision)
+                                          │  POST /sessions → LiveKit token
+                                          │  POST /tts/read-aloud → Cartesia
+                                          ▼
+   apps/web  ◀═══ WebRTC audio + "quiz" data channel ═══▶  LiveKit Cloud
+                                                              ▲
+                                                              ║ WebRTC
+                                                       apps/agent (Pip)
+                                          GET /sessions/:id (lesson) │
+                                  Deepgram (STT) ◀── Gemini (LLM) ──▶ Cartesia (TTS)
+```
+
+Two decisions shape everything:
+
+- **Vision is decoupled from voice.** Photo → concepts is a plain REST call (`POST /lessons`) that completes before any voice session exists. The entire Phase-1 path — pick a subject and age, upload a photo, see extracted concepts on the review screen — works with no LiveKit and even no API keys, via an offline `VISION_PROVIDER=stub` mode. (ADR-0003)
+- **A cascaded STT → LLM → TTS pipeline, not a single realtime model.** The realtime path had known issues on the Node SDK; the cascade is robust and, crucially, provider-swappable. Every capability — vision, STT, LLM, TTS, LiveKit token minting — sits behind a small interface chosen by a config-driven factory, so swapping a vendor is an env var and one `case` and no vendor SDK call leaks into business logic. (ADR-0009)
+
+Quiz state is the other careful piece. Agent→frontend updates are typed `QuizMessage`s published on the room's reliable `quiz` topic (ADR-0010), and the frontend folds them with pure reducers (ADR-0011) — the agent owns the authoritative tally (ADR-0013), the UI just renders it. That same `TTSProvider` abstraction gets exercised in two very different contexts — real-time inside the agent, and on-demand over REST for the read-aloud feature — which is a good sign the boundary sits at the right level (ADR-0014).
+
+## Outcomes
+
+All 19 backlog items, B00 through B18, are complete: the photo→concepts vision path, sessions and LiveKit token minting, the capture/review/quiz web screens, Pip's voice pipeline, the live transcript and scorecard, agent-state avatar, study-summary, read-aloud, a full web accessibility layer, and dedicated child-safety and accessibility passes. Seventeen ADRs are merged. The whole thing builds, lints, and tests green behind a 70% coverage floor and a pre-push gate.
+
+The voice quiz works end-to-end: a child uploads a photo, sees the concepts, hits "Start quiz," and talks with Pip — who asks, listens, hints once, and logs honest verdicts to a scorecard the parent can read. Accessibility is first-class rather than retrofitted: read-aloud with karaoke-style synchronized word highlighting driven by Cartesia timestamps, Lexend by default with an OpenDyslexic opt-in, warm-cream backgrounds and dark-grey (not pure-black) text, three text sizes and reading themes, redundant multimodal signals (colour is never the only cue), keyboard navigation with visible focus, and `aria-live` regions for the transcript and Pip's state.
+
+The live deploy is the next step — a single small VPS running the API and the always-on agent worker via `docker-compose` behind Caddy for HTTPS, with the web app on Vercel (ADR-0005). **Live deploy coming soon.**
+
+## What I'd do differently
+
+The honest gap is everything marked `// PROD:` in the code, and I'd be clearer up front about which of those gaps are *acceptable for an MVP* versus *blocking for real children*. Right now lessons and sessions are in-memory — a server restart wipes them, and a mid-quiz refresh loses the session — which is fine for a demo and unacceptable the moment a real child uses it twice. Real auth, parental consent, COPPA/GDPR-K handling, image safety scanning, and EXIF stripping are all deliberately out of scope for the MVP, but I'd put a sharper line in the constitution between "not built yet" and "must exist before a single real user," so the demo-ready milestone never gets mistaken for ship-ready.
+
+The other thing I'd start earlier is the production provider boundary. Today each capability sits behind a config-driven factory, which is enough to swap vendors — but the cleaner end state is hexagonal ports/adapters: define our own `LanguageModel` / `SpeechToText` / `TextToSpeech` ports and wrap the vendor SDKs as adapters, so the domain depends on our interfaces rather than the other way around. The factories already mark the single seam where those adapters slot in, so it's not wasted work — but doing it as ports from the start would have cost little and saved a later refactor.
